@@ -1,11 +1,11 @@
 VARNISH_REDIRECTS='[
     {
-      "from": "^(https?://[^/]+)/(?:index\\b)?",
-      "to": "$1/hovers/"
+      "from": "^(https?://[^/]+)/(?:$|index\\b)",
+      "to": "\\1/hovers/"
     },
     {
       "from": "^(https?://[^/]+)/demo\\b",
-      "to": "$1/slideshow",
+      "to": "\\1/slideshow",
       "internal": true
     }
   ]'
@@ -25,7 +25,7 @@ VARNISH_APPS='{
       "backends": [
         {
           "host": "192.168.59.103",
-          "port": 8080
+          "port": 8081
         }
       ]
     }

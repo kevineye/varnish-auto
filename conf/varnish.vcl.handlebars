@@ -28,10 +28,35 @@ sub vcl_init {
 
 sub vcl_recv {
     set req.http.complete_url = "http://" + req.http.host + req.url;
+
+    # redirects
+    if (false) {}
+    {{#each redirects}}
+    else if (req.http.complete_url ~ "{{from}}") {
+        {{#if internal}}
+        set req.http.complete_url = regsub(req.http.complete_url, "{{from}}", "{{to}}");
+        set req.http.host = regsub(req.http.complete_url, "^https?://([^/]+).*", "\1");
+        set req.url = regsub(req.http.complete_url, "^https?://[^/]+(/.*)", "\1");
+        {{else}}
+        return (synth(301, regsub(req.http.complete_url, "{{from}}", "{{to}}")));
+        {{/if}}
+    }
+    {{/each}}
+
+    # apps
+    if (false) {}
     {{#each apps}}
-    if (req.http.complete_url ~ "{{path}}") {
+    else if (req.http.complete_url ~ "{{path}}") {
         set req.backend_hint = {{@key}}.backend();
     }
     {{/each}}
     unset req.http.cmplete_url;
+}
+
+sub vcl_synth {
+    if (resp.status == 301) {
+        set resp.http.Location = resp.reason;
+        set resp.reason = "Moved Permanently";
+        return(deliver);
+    }
 }
