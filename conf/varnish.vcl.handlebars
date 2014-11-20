@@ -2,10 +2,10 @@ vcl 4.0;
 import directors;
 
 {{#each apps}}
-{{#each ../backends}}
-backend host_{{@index}}_{{../name}} {
-    .host = "{{.}}";
-    .port = "{{../port}}";
+{{#each backends}}
+backend host_{{@index}}_{{@key}} {
+    .host = "{{host}}";
+    .port = "{{port}}";
     .probe = {
         .url = "/check/status.txt";
         .interval = 5s;
@@ -19,17 +19,19 @@ backend host_{{@index}}_{{../name}} {
 
 sub vcl_init {
     {{#each apps}}
-    new {{name}} = directors.round_robin();
-    {{#each ../backends}}
-    {{../name}}.add_backend(host_{{@index}}_{{../name}});
+    new {{@key}} = directors.round_robin();
+    {{#each backends}}
+    {{@key}}.add_backend(host_{{@index}}_{{@key}});
     {{/each}}
     {{/each}}
 }
 
 sub vcl_recv {
+    set req.http.complete_url = "http://" + req.http.host + req.url;
     {{#each apps}}
-    if (req.url ~ "{{path}}") {
-        set req.backend_hint = {{name}}.backend();
+    if (req.http.complete_url ~ "{{path}}") {
+        set req.backend_hint = {{@key}}.backend();
     }
     {{/each}}
+    unset req.http.cmplete_url;
 }

@@ -1,14 +1,32 @@
-VARNISH_BACKENDS=${VARNISH_BACKENDS:-'["127.0.0.1"]'}
-
-VARNISH_APPS='[
+VARNISH_REDIRECTS='[
     {
-        "name": "apache_sample",
-        "path": "^/hovers/",
-        "port": "8080"
+      "from": "^(https?://[^/]+)/(?:index\\b)?",
+      "to": "$1/hovers/"
     },
     {
-        "name": "apache_sample_2",
-        "path": "^/slideshow/",
-        "port": "8081"
+      "from": "^(https?://[^/]+)/demo\\b",
+      "to": "$1/slideshow",
+      "internal": true
     }
-]'
+  ]'
+
+VARNISH_APPS='{
+    "apache_sample": {
+      "path": "^(https?://[^/]+)/hovers/",
+      "backends": [
+        {
+          "host": "192.168.59.103",
+          "port": 8080
+        }
+      ]
+    },
+    "apache_sample_2": {
+      "path": "^(https?://[^/]+)/slideshow/",
+      "backends": [
+        {
+          "host": "192.168.59.103",
+          "port": 8080
+        }
+      ]
+    }
+  }'
