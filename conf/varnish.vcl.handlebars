@@ -1,3 +1,6 @@
+vcl 4.0;
+import directors;
+
 {{#each apps}}
 {{#each ../backends}}
 backend host_{{@index}}_{{../name}} {
@@ -12,20 +15,21 @@ backend host_{{@index}}_{{../name}} {
     }
 }
 {{/each}}
+{{/each}}
 
-director {{name}} round-robin {
-{{#each ../backends}}
-    {
-        .backend = host_{{@index}}_{{../name}};
-    }
-{{/each}}
+sub vcl_init {
+    {{#each apps}}
+    new {{name}} = directors.round_robin();
+    {{#each ../backends}}
+    {{../name}}.add_backend(host_{{@index}}_{{../name}});
+    {{/each}}
+    {{/each}}
 }
-{{/each}}
 
 sub vcl_recv {
     {{#each apps}}
     if (req.url ~ "{{path}}") {
-        set req.backend = {{name}};
+        set req.backend_hint = {{name}}.backend();
     }
     {{/each}}
 }
