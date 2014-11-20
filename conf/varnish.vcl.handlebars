@@ -1,0 +1,31 @@
+{{#each apps}}
+{{#each ../backends}}
+backend host_{{@index}}_{{../name}} {
+    .host = "{{.}}";
+    .port = "{{../port}}";
+    .probe = {
+        .url = "/check/status.txt";
+        .interval = 5s;
+        .timeout = 1s;
+        .window = 5;
+        .threshold = 3;
+    }
+}
+{{/each}}
+
+director {{name}} round-robin {
+{{#each ../backends}}
+    {
+        .backend = host_{{@index}}_{{../name}};
+    }
+{{/each}}
+}
+{{/each}}
+
+sub vcl_recv {
+    {{#each apps}}
+    if (req.url ~ "{{path}}") {
+        set req.backend = {{name}};
+    }
+    {{/each}}
+}
