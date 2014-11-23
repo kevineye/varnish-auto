@@ -1,0 +1,233 @@
+#!/usr/bin/perl
+use strict;
+
+package Etcd::Varnish;
+
+use autodie;
+
+use Mojo::JSON 'encode_json';
+use Mojo::UserAgent;
+
+sub new {
+    my ($class, $options) = @_;
+    $options ||= {};
+
+    $options->{etcd_host} ||= $ENV{ETCD_HOST} || 'etcd';
+    $options->{etcd_host} = 'http://' . $options->{etcd_host} unless $options->{etcd_host} =~ m{^https?://};
+    $options->{etcd_host} .= ':4001' unless $options->{etcd_host} =~ m{:\d+$};
+
+    $options->{ua} ||= Mojo::UserAgent->new;
+
+    my $self = bless {
+        %$options,
+    }, $class;
+
+    return $self;
+}
+
+sub cmd {
+    my $class = shift;
+
+    my $self = $class->new();
+
+    my $cmd = shift() . '_' . shift();
+    $cmd = 'help' if !$cmd or !$self->can($cmd);
+
+    my $out;
+    eval {
+        $out = $self->$cmd(@_);
+    };
+    if ($@) {
+        my $error = $@;
+        $error .= "\n" if length $error and $error !~ /\n$/;
+        warn $error;
+        exit -1;
+    } else {
+        print $out;
+        print "\n" if length $out and $out !~ /\n$/ and -t STDOUT;
+        exit 0;
+    }
+}
+
+sub help {
+    die <<USAGE;
+usage: $0 add app <appname> <path> <host> <port>
+       $0 remove app <appname> [ <host> <port> ]
+       $0 get apps
+       $0 add redirect <from> <to> [ <internal> [ <position> ]]
+       $0 remove redirect <from | position>
+       $0 get redirects
+       $0 help
+USAGE
+}
+
+sub _read_etcd_values {
+    my ($store, $node) = @_;
+    if ($node->{key} and $node->{dir}) {
+        _set_key($store, $node->{key}, {});
+    } elsif ($node->{key} and $node->{value}) {
+        _set_key($store, $node->{key}, $node->{value});
+    }
+    my @children;
+    push @children, $node->{node} if $node->{node};
+    push @children, @{$node->{nodes}} if $node->{nodes};
+    _read_etcd_values($store, $_) for @children;
+}
+
+sub _set_key {
+    my ($store, $key, $value) = @_;
+    $key =~ s{^/}{};
+    if ($key =~ m{^(.*?)/(.*)$}) {
+        my ($name, $path) = ($1, $2);
+        $store->{$name} ||= {};
+        _set_key($store->{$name}, $path, $value);
+    } else {
+        $store->{$key} = $value;
+    }
+}
+
+sub get_apps_data {
+    my ($self) = @_;
+
+    my $etcd_data = $self->{ua}->get("$self->{etcd_host}/v2/keys/varnish/apps?recursive=true&sorted=true")->res->json;
+
+    my $filtered_data = {};
+    _read_etcd_values($filtered_data, $etcd_data);
+
+    my $final_data = {};
+
+    my $apps = $filtered_data->{varnish}{apps} || {};
+    for my $app (keys %$apps) {
+        my $app_data = $apps->{$app};
+        next unless $app_data->{path};
+        $app = $self->_fixup_app_name($app);
+        $final_data->{$app} = {
+            path => $app_data->{path},
+            backends => [],
+        };
+        for my $b (values %{$app_data->{backends} || {}}) {
+            next unless $b->{host} and $b->{port};
+            push @{$final_data->{$app}{backends}}, { host => $b->{host}, port => $b->{port} };
+        }
+    }
+
+    return $final_data;
+}
+
+sub _fixup_app_name {
+    my ($self, $name) = @_;
+    $name =~ s{^[^A-Za-z_]+|[^A-Za-z0-9_]}{}g;
+    return $name;
+}
+
+sub get_apps {
+    return encode_json shift->get_apps_data;
+}
+
+sub add_app {
+    my ($self, $app, $path, $host, $port) = @_;
+    $app = $self->_fixup_app_name($app);
+    $self->_etcd_set("/varnish/apps/$app/path", $path);
+    $self->_etcd_set("/varnish/apps/$app/backends/$host:$port/host", $host);
+    $self->_etcd_set("/varnish/apps/$app/backends/$host:$port/port", $port);
+    return;
+}
+
+sub remove_app {
+    my ($self, $app, $host, $port) = @_;
+    if ($host && $port) {
+        eval {
+            $self->_etcd_rmdir("/varnish/apps/$app/backends/$host:$port");
+        };
+        my $apps = $self->get_apps_data;
+        $self->remove_app($app) if @{$apps->{$app}{backends} || []} == 0;
+    } else {
+        $self->_etcd_rmdir("/varnish/apps/$app");
+    }
+    return;
+}
+
+sub add_redirect {
+    my ($self, $from, $to, $internal, $position) = @_;
+    my $index;
+    my $r = shift->get_redirects_data;
+    if (@$r and length $position) {
+        if ($position <= 1) { # position = 1 means "make this first"
+            $index = $r->[0]{index}/2;
+        } elsif ($position > @$r) {
+            $index = $r->[$#$r]{index} + 65536;
+        } else { # position = 5 means "make this fifth" means insert between $r->[3] and $r->[4]
+            $index = ($r->[$position-1]{index} + $r->[$position-2]{index}) / 2;
+        }
+    } else {
+        $index = @$r ? $r->[$#$r]{index} + 65536 : 65536;
+    }
+    $index = sprintf '%016d', $index;
+    $self->_etcd_set("/varnish/redirects/$index/from", $from);
+    $self->_etcd_set("/varnish/redirects/$index/to", $to);
+    $self->_etcd_set("/varnish/redirects/$index/internal", $internal ? 'true' : '');
+    return;
+}
+
+sub remove_redirect {
+    my ($self, $arg) = @_;
+    my $r = shift->get_redirects_data;
+    my @to_delete = grep { $_->{from} eq $arg } @$r;
+    @to_delete = $r->[$arg-1] unless @to_delete;
+    $self->_etcd_rmdir("/varnish/redirects/$_->{index}") for @to_delete;
+    return;
+}
+
+sub get_redirects_data {
+    my ($self) = @_;
+
+    my $etcd_data = $self->{ua}->get("$self->{etcd_host}/v2/keys/varnish/redirects?recursive=true")->res->json;
+
+    my $filtered_data = {};
+    _read_etcd_values($filtered_data, $etcd_data);
+
+    my $final_data = [];
+
+    my $redirects = $filtered_data->{varnish}{redirects} || {};
+    for my $index (sort keys %$redirects) {
+        my $redirect = $redirects->{$index};
+        next unless $redirect->{from} and $redirect->{to};
+        push @$final_data, {
+            from => $redirect->{from},
+            to => $redirect->{to},
+            internal => $redirect->{internal} ? Mojo::JSON->true : Mojo::JSON->false,
+            index => $index,
+        };
+    }
+
+    return $final_data;
+}
+
+sub get_redirects {
+    my $r = shift->get_redirects_data;
+    for (@$r) {
+        delete $_->{internal} unless $_->{internal};
+        delete $_->{index};
+    }
+    return encode_json $r;
+}
+
+sub _etcd_rmdir {
+    my ($self, $dir) = @_;
+    $self->{ua}->delete("$self->{etcd_host}/v2/keys$dir?recursive=true");
+}
+
+sub _etcd_mkdir {
+    my ($self, $dir) = @_;
+    $self->{ua}->put("$self->{etcd_host}/v2/keys$dir", form => { dir => 'true' });
+}
+
+sub _etcd_set {
+    my ($self, $key, $value) = @_;
+    $self->{ua}->put("$self->{etcd_host}/v2/keys$key", form => { value => $value });
+}
+
+package main;
+Etcd::Varnish->cmd(@ARGV) unless caller;
+
+1;
