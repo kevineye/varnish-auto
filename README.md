@@ -116,10 +116,26 @@ http://192.168.59.103/internal-demo
 
 	docker exec varnish cat /etc/varnish/default.vcl
 
+### Get inside varnish
+
+	docker exec -it varnish varnishadm
+
+### Container development
+
+	docker run --rm -i -t --link etcd:etcd -p 80:80 -v `pwd`/varnish:/app kevineye/varnish bash
+
 # Scaling to multiple docker hosts
 
-Not yet tested, but should work.
+Not yet tested, but should work:
 
  1. Start etcd and registrator on each docker host, clustering etcd instances.
- 2. For redundancy, start varnish container on each docker host, and use a real load balancer or round-robin DNS to direct traffic to all varnish containers. This is not absolutely necessary. Having only one varnish instance will balance among apps on multiple hosts, but will not have redundancy.
- 3. Start any number of apps on any docker hosts. Apps do not need to run on all hosts, or could run multiple times on the same host.
+ 1. For redundancy, start varnish container on each docker host, and use a real load balancer or round-robin DNS to direct traffic to all varnish containers. This is not absolutely necessary. Having only one varnish instance will balance among apps on multiple hosts, but will not have redundancy.
+ 1. Start any number of apps on any docker hosts. Apps do not need to run on all hosts, or could run multiple times on the same host.
+
+# SSL/TLS Termination
+
+Not tested yet, but should work:
+
+1. Use a separate container running stud, nginx, apache, ... just to handle SSL/TLS unwrapping, then forward to varnish.
+2. Probably run one dedicated to each varnish container.
+3. This container could also handle authentication (oauth, shibboleth, etc.)

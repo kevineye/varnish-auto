@@ -2,6 +2,10 @@ vcl 4.0;
 import directors;
 
 # backends
+backend default { # default backend is never actually used -- see vcl_recv
+    .host = "localhost";
+    .port = "8080";
+}
 {{ range $appnum, $app := lsdir "/services" }}{{ range $instancenum, $instance := ls (printf "/services/%s" $app) }}{{ if eq (index (split $instance ":") 2) "80" }}{{ $hostport := split (getv (printf "/services/%s/%s" $app $instance)) ":" }}{{ if ne (index $hostport 1) "80" }}
 backend host_{{ $instancenum }}_{{ $appnum }} { # {{ $app }}: {{ index $hostport 0 }}:{{ index $hostport 1 }} -> {{ $instance }}
     .host = "{{ index $hostport 0 }}";
@@ -29,6 +33,7 @@ sub vcl_init {
 
 sub vcl_recv {
     set req.http.complete_url = "http://" + req.http.host + req.url;
+    set req.backend_hint = default;
 
     if (false) {} # dummy to make the rest always say "else if"
 {{ range $app := ls "/apps" }}{{ range jsonArray (getv (printf "/apps/%s" $app)) }}{{ if .from }}
@@ -42,12 +47,29 @@ sub vcl_recv {
     }
 {{ end }}{{ end }}{{ end }}
     unset req.http.cmplete_url;
+
+    if (req.backend_hint == default) {
+        return (synth(404, "Not found"));
+    }
 }
 
 sub vcl_synth {
     if (resp.status == 301) {
         set resp.http.Location = resp.reason;
         set resp.reason = "Moved Permanently";
-        return(deliver);
     }
+
+    set resp.http.Content-Type = "text/html; charset=utf-8";
+    set resp.http.Retry-After = "5";
+    synthetic( {"<!DOCTYPE HTML>
+<html><head><meta charset="utf-8"><title>"} + resp.status + " " + resp.reason + {"</title><style>
+    @import url(http://fonts.googleapis.com/css?family=Bree+Serif|Source+Sans+Pro:300,400);
+    body{ background: #E6E6E6; color: #666; text-align: center }
+    h1 { font: bold 25vh/1 'Bree Serif', sans-serif; margin: 25vh 0 0 }
+    p { font: 5vh 'Source Sans Pro', sans-serif; margin: 10px }
+</style></head><body>
+    <h1>"} + resp.status + {"</h1>
+    <p>"} + resp.reason + {".</p>
+</body></html>"} );
+    return (deliver);
 }

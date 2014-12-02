@@ -16,7 +16,8 @@ RUN easy_install supervisor \
  && ln -s /app/conf/varnish.confd /etc/confd/conf.d/varnish.toml \
  && ln -s /app/conf/varnish.vcl.tmpl /etc/confd/templates/varnish.vcl.tmpl \
  && rm -rf /var/log/varnish \
- && ln -s /log /var/log/varnish
+ && ln -s /log /var/log/varnish \
+ && cp /app/conf/default.vcl /etc/varnish/default.vcl
 
 EXPOSE 80
 
