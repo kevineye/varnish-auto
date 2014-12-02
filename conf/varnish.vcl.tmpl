@@ -1,0 +1,53 @@
+vcl 4.0;
+import directors;
+
+# backends
+{{ range $appnum, $app := lsdir "/services" }}{{ range $instancenum, $instance := ls (printf "/services/%s" $app) }}{{ if eq (index (split $instance ":") 2) "80" }}{{ $hostport := split (getv (printf "/services/%s/%s" $app $instance)) ":" }}{{ if ne (index $hostport 1) "80" }}
+backend host_{{ $instancenum }}_{{ $appnum }} { # {{ $app }}: {{ index $hostport 0 }}:{{ index $hostport 1 }} -> {{ $instance }}
+    .host = "{{ index $hostport 0 }}";
+    .port = "{{ index $hostport 1 }}";
+    .probe = {
+        .url = "/check/status.txt";
+        .interval = 5s;
+        .timeout = 1s;
+        .window = 5;
+        .threshold = 3;
+    }
+}{{ end }}{{ end }}{{ end }}{{ end }}
+
+
+# setup directors
+
+sub vcl_init {
+{{ range $appnum, $app := lsdir "/services" }}{{ range $instancenum, $instance := ls (printf "/services/%s" $app) }}{{ if eq (index (split $instance ":") 2) "80" }}{{ $hostport := split (getv (printf "/services/%s/%s" $app $instance)) ":" }}{{ if ne (index $hostport 1) "80" }}{{ if eq $instancenum 0 }}
+    new director_{{ $appnum }} = directors.round_robin(); # {{ $app }}{{ end }}
+    director_{{ $appnum }}.add_backend(host_{{ $instancenum }}_{{ $appnum }}); # {{ $instance }}
+{{ end }}{{ end }}{{ end }}{{ end }}
+}
+
+# redirects / mapping
+
+sub vcl_recv {
+    set req.http.complete_url = "http://" + req.http.host + req.url;
+
+    if (false) {} # dummy to make the rest always say "else if"
+{{ range $app := ls "/apps" }}{{ range jsonArray (getv (printf "/apps/%s" $app)) }}{{ if .from }}
+    else if (req.http.complete_url ~ "{{ .from }}") { # from {{ $app }}{{ if .to }}{{ if .internal }}
+        set req.http.complete_url = regsub(req.http.complete_url, "{{ .from }}", "{{ .to }}");
+        set req.http.host = regsub(req.http.complete_url, "^https?://([^/]+).*", "\1");
+        set req.url = regsub(req.http.complete_url, "^https?://[^/]+(/.*)", "\1");{{ else }}
+        return (synth(301, regsub(req.http.complete_url, "{{ .from }}", "{{ .to }}")));{{ end }}{{ else if .app }}{{ range $appnum, $appname := lsdir "/services" }}{{ if eq .app $appname }}
+        set req.backend_hint = director_{{ $appnum }}.backend(); # {{ $appname }}{{ end }}{{ end }}{{ else }}{{ range $appnum, $appname := lsdir "/services" }}{{ if eq $app $appname }}
+        set req.backend_hint = director_{{ $appnum }}.backend(); # {{ $appname }}{{ end }}{{ end }}{{ end }}
+    }
+{{ end }}{{ end }}{{ end }}
+    unset req.http.cmplete_url;
+}
+
+sub vcl_synth {
+    if (resp.status == 301) {
+        set resp.http.Location = resp.reason;
+        set resp.reason = "Moved Permanently";
+        return(deliver);
+    }
+}
