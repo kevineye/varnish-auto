@@ -1,8 +1,8 @@
 # Build images
 
-    docker build -t kevineye/apache-sample-hovers apache-sample-hovers
-    docker build -t kevineye/apache-sample-slideshow apache-sample-slideshow
-    docker build -t kevineye/varnish varnish
+    docker build -t kevineye/docker-sample-hovers docker-sample-hovers
+    docker build -t kevineye/docker-sample-slideshow docker-sample-slideshow
+    docker build -t kevineye/varnish-auto varnish-auto
 
 # Start dependencies
 
@@ -19,11 +19,11 @@ In these examples, `192.168.59.103` is the docker host machine.
 These could be started in any order. Note, the individual servers (apache containers) do not need a link to etcd, do not need a hostname specification (`-h`), do not need a name (`--name`), and their ports can be allocated dynamically by docker (`-P`).
 
     # start varnish container
-    docker run --name varnish -d --link etcd:etcd -p 80:80 kevineye/varnish
+    docker run --name varnish -d --link etcd:etcd -p 80:80 kevineye/varnish-auto
     
     # start sample apps
-    docker run -d -P kevineye/apache-sample-hovers
-    docker run -d -P kevineye/apache-sample-slideshow
+    docker run -d -P kevineye/docker-sample-hovers
+    docker run -d -P kevineye/docker-sample-slideshow
 
 Note, the default varnish configuration will be used until there are both apps running and app configuration metadata (below).
 
@@ -49,7 +49,7 @@ The following JSON is added to mount the hovers sample app at `/hovers`, and red
         
 This can be installed with this command:
 
-    docker run --rm -it --link etcd:etcd kevineye/varnish sh -c 'etcdctl --peers $ETCD_PORT_4001_TCP_ADDR:$ETCD_PORT_4001_TCP_PORT set /apps/apache-sample-hovers '\''[ { "from": "^https?://[^/]+/hovers\\b" }, { "from": "^(https?://[^/]+)/(?:$|index\\b).*", "to": "\\1/hovers/" } ]'\'
+    docker run --rm -it --link etcd:etcd kevineye/varnish-auto sh -c 'etcdctl --peers $ETCD_PORT_4001_TCP_ADDR:$ETCD_PORT_4001_TCP_PORT set /apps/docker-sample-hovers '\''[ { "from": "^https?://[^/]+/hovers\\b" }, { "from": "^(https?://[^/]+)/(?:$|index\\b).*", "to": "\\1/hovers/" } ]'\'
 
 ### Slideshow app configuration
 
@@ -68,7 +68,7 @@ The following JSON is added to mount the hovers sample app at `/slideshow`, and 
         
 This can be installed with this command:
 
-    docker run --rm -it --link etcd:etcd kevineye/varnish sh -c 'etcdctl --peers $ETCD_PORT_4001_TCP_ADDR:$ETCD_PORT_4001_TCP_PORT set /apps/apache-sample-slideshow '\''[ { "from": "^https?://[^/]+/slideshow\\b" }, { "from": "^(https?://[^/]+)/internal-demo\\b", "to": "\\1/slideshow", "internal": true } ]'\'
+    docker run --rm -it --link etcd:etcd kevineye/varnish-auto sh -c 'etcdctl --peers $ETCD_PORT_4001_TCP_ADDR:$ETCD_PORT_4001_TCP_PORT set /apps/docker-sample-slideshow '\''[ { "from": "^https?://[^/]+/slideshow\\b" }, { "from": "^(https?://[^/]+)/internal-demo\\b", "to": "\\1/slideshow", "internal": true } ]'\'
 
 # Try it out
 
@@ -97,10 +97,10 @@ http://192.168.59.103/internal-demo
 	curl -sL http://192.168.59.103:4001/v2/keys/apps?recursive=true | jq .
 
 	# just list app configuration keys, using etcdctl
-    docker run --rm -it --link etcd:etcd kevineye/varnish sh -c 'etcdctl --peers $ETCD_PORT_4001_TCP_ADDR:$ETCD_PORT_4001_TCP_PORT ls /apps'
+    docker run --rm -it --link etcd:etcd kevineye/varnish-auto sh -c 'etcdctl --peers $ETCD_PORT_4001_TCP_ADDR:$ETCD_PORT_4001_TCP_PORT ls /apps'
 
 	# remove an app configuration
-    docker run --rm -it --link etcd:etcd kevineye/varnish sh -c 'etcdctl --peers $ETCD_PORT_4001_TCP_ADDR:$ETCD_PORT_4001_TCP_PORT rmdir /apps/apache-sample-slideshow'
+    docker run --rm -it --link etcd:etcd kevineye/varnish-auto sh -c 'etcdctl --peers $ETCD_PORT_4001_TCP_ADDR:$ETCD_PORT_4001_TCP_PORT rmdir /apps/docker-sample-slideshow'
 
 ### Watch registrator add/remove apps
 
@@ -120,7 +120,7 @@ http://192.168.59.103/internal-demo
 
 ### Container development
 
-	docker run --rm -i -t --link etcd:etcd -p 80:80 -v `pwd`/varnish:/app kevineye/varnish bash
+	docker run --rm -i -t --link etcd:etcd -p 80:80 -v `pwd`/varnish-auto:/app kevineye/varnish-auto bash
 
 # Scaling to multiple docker hosts
 
