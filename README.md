@@ -1,7 +1,5 @@
 # Build images
 
-    docker build -t kevineye/centos centos
-    docker build -t kevineye/apache apache
     docker build -t kevineye/apache-sample-hovers apache-sample-hovers
     docker build -t kevineye/apache-sample-slideshow apache-sample-slideshow
     docker build -t kevineye/varnish varnish
@@ -33,9 +31,9 @@ Note, the default varnish configuration will be used until there are both apps r
 
 Without any configuration, the apps will not be accessible through varnish. The configuration can be added before or after varnish or the apps are started. The configuration will not be removed when the apps stop. The configuration will be lost if all clustered etcd containers are destroyed unless a persistent etcd log volume is configured.
 
-The configuration is loaded into etcd using `etcdctl`. This is run in a generic container so that etcdctl does not have to be installed on the host machine.
+The configuration is loaded into etcd using `etcdctl`. This is run in a container so that etcdctl does not have to be installed on the host machine.
 
-### Hover app configuration
+### Hovers app configuration
 
 The following JSON is added to mount the hovers sample app at `/hovers`, and redirect from `/`.
 
@@ -51,7 +49,7 @@ The following JSON is added to mount the hovers sample app at `/hovers`, and red
         
 This can be installed with this command:
 
-    docker run --rm -it --link etcd:etcd kevineye/centos sh -c 'etcdctl --peers $ETCD_PORT_4001_TCP_ADDR:$ETCD_PORT_4001_TCP_PORT set /apps/apache-sample-hovers '\''[ { "from": "^https?://[^/]+/hovers\\b" }, { "from": "^(https?://[^/]+)/(?:$|index\\b).*", "to": "\\1/hovers/" } ]'\'
+    docker run --rm -it --link etcd:etcd kevineye/varnish sh -c 'etcdctl --peers $ETCD_PORT_4001_TCP_ADDR:$ETCD_PORT_4001_TCP_PORT set /apps/apache-sample-hovers '\''[ { "from": "^https?://[^/]+/hovers\\b" }, { "from": "^(https?://[^/]+)/(?:$|index\\b).*", "to": "\\1/hovers/" } ]'\'
 
 ### Slideshow app configuration
 
@@ -70,7 +68,7 @@ The following JSON is added to mount the hovers sample app at `/slideshow`, and 
         
 This can be installed with this command:
 
-    docker run --rm -it --link etcd:etcd kevineye/centos sh -c 'etcdctl --peers $ETCD_PORT_4001_TCP_ADDR:$ETCD_PORT_4001_TCP_PORT set /apps/apache-sample-slideshow '\''[ { "from": "^https?://[^/]+/slideshow\\b" }, { "from": "^(https?://[^/]+)/internal-demo\\b", "to": "\\1/slideshow", "internal": true } ]'\'
+    docker run --rm -it --link etcd:etcd kevineye/varnish sh -c 'etcdctl --peers $ETCD_PORT_4001_TCP_ADDR:$ETCD_PORT_4001_TCP_PORT set /apps/apache-sample-slideshow '\''[ { "from": "^https?://[^/]+/slideshow\\b" }, { "from": "^(https?://[^/]+)/internal-demo\\b", "to": "\\1/slideshow", "internal": true } ]'\'
 
 # Try it out
 
@@ -99,10 +97,10 @@ http://192.168.59.103/internal-demo
 	curl -sL http://192.168.59.103:4001/v2/keys/apps?recursive=true | jq .
 
 	# just list app configuration keys, using etcdctl
-    docker run --rm -it --link etcd:etcd kevineye/centos sh -c 'etcdctl --peers $ETCD_PORT_4001_TCP_ADDR:$ETCD_PORT_4001_TCP_PORT ls /apps'
+    docker run --rm -it --link etcd:etcd kevineye/varnish sh -c 'etcdctl --peers $ETCD_PORT_4001_TCP_ADDR:$ETCD_PORT_4001_TCP_PORT ls /apps'
 
 	# remove an app configuration
-    docker run --rm -it --link etcd:etcd kevineye/centos sh -c 'etcdctl --peers $ETCD_PORT_4001_TCP_ADDR:$ETCD_PORT_4001_TCP_PORT rmdir /apps/apache-sample-slideshow'
+    docker run --rm -it --link etcd:etcd kevineye/varnish sh -c 'etcdctl --peers $ETCD_PORT_4001_TCP_ADDR:$ETCD_PORT_4001_TCP_PORT rmdir /apps/apache-sample-slideshow'
 
 ### Watch registrator add/remove apps
 
